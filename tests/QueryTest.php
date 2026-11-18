@@ -273,6 +273,7 @@ final class QueryTest extends TestCase {
 		$id = (int) acme_add_widget( [ 'name' => 'Cached' ] );
 
 		$this->assertSame( 0, (int) acme_get_widget( $id )->use_count );
+		$this->assertSame( 0, acme_count_widgets( [ 'use_count' => 2, 'id' => $id ] ), 'A cached list, before.' );
 
 		( new Widget() )->adjust( $id, 'use_count', 1 );
 		( new Widget() )->adjust( $id, 'use_count', 1 );
@@ -568,6 +569,26 @@ final class QueryTest extends TestCase {
 		$this->assertSame( [], self::raw_event( $old ) );
 		$this->assertSame( [], self::raw_event( $older ) );
 		$this->assertNotSame( [], self::raw_event( $new ) );
+	}
+
+	/**
+	 * A swept row's cached copy and every cached list go, through core's
+	 * wp_cache_delete_multiple() and wp_cache_set_last_changed().
+	 *
+	 * @return void
+	 */
+	public function test_a_sweep_forgets_the_cached_rows_and_lists(): void {
+		[ $old ] = self::old_events( [ [ 'done', 40 ] ] );
+
+		$this->assertNotFalse( acme_get_event( $old ), 'Read once, so it is cached.' );
+		$listed  = acme_count_events( [ 'status' => 'done' ] );
+		$changed = did_action( 'wp_cache_set_last_changed' );
+
+		$this->assertSame( 1, ( new Event() )->sweep( 'date_created', self::days_ago( 30 ) ) );
+
+		$this->assertSame( $changed + 1, did_action( 'wp_cache_set_last_changed' ) );
+		$this->assertEmpty( acme_get_event( $old ), 'The cached row is gone, not served stale.' );
+		$this->assertSame( $listed - 1, acme_count_events( [ 'status' => 'done' ] ), 'Cached lists see it.' );
 	}
 
 	/**

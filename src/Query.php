@@ -475,15 +475,13 @@ class Query extends Base {
 		}
 		// phpcs:enable
 
-		foreach ( $ids as $id ) {
-			wp_cache_delete( $id, $this->cache_group );
+		wp_cache_delete_multiple( $ids, $this->cache_group );
 
-			if ( '' !== $meta ) {
-				wp_cache_delete( $id, $type . '_meta' );
-			}
+		if ( '' !== $meta ) {
+			wp_cache_delete_multiple( $ids, $type . '_meta' );
 		}
 
-		wp_cache_set( 'last_changed', microtime(), $this->cache_group );
+		wp_cache_set_last_changed( $this->cache_group );
 
 		return $removed;
 	}
@@ -513,7 +511,7 @@ class Query extends Base {
 	 */
 	protected function forget( int $id ): void {
 		wp_cache_delete( $id, $this->cache_group );
-		wp_cache_set( 'last_changed', microtime(), $this->cache_group );
+		wp_cache_set_last_changed( $this->cache_group );
 	}
 
 	/**

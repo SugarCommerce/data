@@ -144,7 +144,9 @@ expected duplicate-key error out of the log; pass the plugin's add function
 as its second argument to have its hooks fire. `sweep()` reads the ids first
 and deletes by id, so a meta table loses exactly those rows' meta; `where`
 and `except` take a value or a list, `dry: true` only counts, and no delete
-hooks fire. `myshop_components()->adjust( 'discount', $id, 'use_count', 1 )`
+hooks fire. Both it and `adjust()` drop the cached rows and lists through
+core's `wp_cache_delete_multiple()` and `wp_cache_set_last_changed()`, so the
+`wp_cache_set_last_changed` action fires as it does for core's tables. `myshop_components()->adjust( 'discount', $id, 'use_count', 1 )`
 also fires `{prefix}_count_adjusted`, and `->ask( 'order', $id, 'get_total' )`
 reads a row through the plugin's getter and asks it one of its methods.
 
