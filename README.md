@@ -32,6 +32,8 @@ library's Query.
 * Count attempts into a named row atomically, for rate limits
 * Clear out rows past their date a batch at a time, meta and cache with them,
   or count them first with a dry run
+* Build each table's Schema once a request, not once per query, and decide
+  who may read which column once per user, not per column of every row
 
 ## Installation
 
@@ -150,6 +152,43 @@ core's `wp_cache_delete_multiple()` and `wp_cache_set_last_changed()`, so the
 also fires `{prefix}_count_adjusted`, and `->ask( 'order', $id, 'get_total' )`
 reads a row through the plugin's getter and asks it one of its methods.
 
+## Built once
+
+BerlinDB builds a query's Schema -- every Column in it, booted and
+validated -- for each query object, and a plugin makes a query object for
+every row it gets by id: one webhook that touched a few thousand orders
+built 55,000 Columns. Every row it read was then checked column by column:
+the column found by filtering the whole Schema, and `current_user_can()`
+asked for it, for every column of every row.
+
+`SugarCommerce\Data\Query` builds each Schema class once a request and
+hands it to every later query of that class, remembers what the Schema's
+columns have answered, and works out once per user which columns they may
+read -- so a cached row is cut down to those in one step. There is nothing
+to configure. On a 40-column table:
+
+| | BerlinDB | This |
+|---|---|---|
+| 2,000 `new Query()` | 3.1 s, 80,000 Columns built | 0.7 s, 40 |
+| `query()` of 5,000 cached rows | 1.5 s, 200,000 capability checks | 0.06 s, none |
+| 5,000 × `new Query()` then `get_item()` | 11 s | 2.3 s |
+
+What to know:
+
+* A Schema is the table's declaration. Change it in the Schema class, not
+  at run time through `$query->get_schema()->add_column()`: that would now
+  reach every query of the class, and lookups already answered would not
+  see it. A Schema passed in as an object
+  (`new Query( [ 'table_schema' => $schema ] )`) is that query's own, as
+  before.
+* Which columns a user may read is worked out once per user per request.
+  `wp_set_current_user()` switches the answer, and switching back switches
+  it back; a capability given to the same user later in the request is not
+  seen until the next one. Writes are checked by BerlinDB, as before.
+* Only a row asked for by id and already cached is read this way. Anything
+  else goes to BerlinDB's own `get_item_by()`, which reads it and caches it
+  for next time.
+
 ## Bundling with Strauss
 
 The plugin bundles this library and BerlinDB with a prefix, and gives its
@@ -193,7 +232,8 @@ other plugin bundling BerlinDB. Nothing here needs it:
   table's classes, and installing and repairing them.
 * `src/Query.php`: the base query class, with insert defaults and the stable
   order; `src/Traits/Query/Writes.php` (adjust, claim, retake, tally) and
-  `Sweep.php` are its race-free writes and its clean-up.
+  `Sweep.php` are its race-free writes and its clean-up, and `Shared.php`
+  the one Schema a class, its remembered lookups and who may read what.
 
 ## Requirements
 

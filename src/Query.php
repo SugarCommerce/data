@@ -13,6 +13,7 @@ declare( strict_types=1 );
 namespace SugarCommerce\Data;
 
 use BerlinDB\Database\Kern\Query as Base;
+use SugarCommerce\Data\Traits\Query\Shared;
 use SugarCommerce\Data\Traits\Query\Sweep;
 use SugarCommerce\Data\Traits\Query\Writes;
 
@@ -47,6 +48,12 @@ defined( 'ABSPATH' ) || exit;
  * **Bounded clean-ups.** sweep() removes rows older than a date, a batch
  * at a time and their meta with them, or with `$dry` only counts them.
  *
+ * **Built once.** Every query object of a class shares one Schema, built by
+ * the first, where BerlinDB builds one -- every Column in it -- for each.
+ * Column lookups are remembered for the Schema, and a cached row is cut
+ * down to the columns the current user may read in one step, worked out
+ * once for that user rather than asked of every column of every row.
+ *
  * Generated query classes extend this. A plugin whose add-ons register their
  * own tables should extend it once in its own namespace and point the
  * generator at that class, so every add-on builds on the plugin's copy.
@@ -55,6 +62,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class Query extends Base {
 
+	use Shared;
 	use Sweep;
 	use Writes;
 
@@ -67,6 +75,19 @@ class Query extends Base {
 	 * @since 1.0.0
 	 */
 	protected $insert_defaults = [];
+
+	/**
+	 * Set up the query, on its class's one Schema.
+	 *
+	 * @return void
+	 * @since 1.0.0
+	 */
+	#[\Override]
+	protected function init(): void {
+		$this->share_schema();
+
+		parent::init();
+	}
 
 	/**
 	 * Add a row, filling in what a function has to say.

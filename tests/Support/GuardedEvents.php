@@ -1,0 +1,43 @@
+<?php
+/**
+ * The events Schema with a column only managers may read, one nobody may,
+ * and one of JSON.
+ *
+ * @package SugarCommerce\Data
+ */
+
+declare( strict_types=1 );
+
+namespace SugarCommerce\Data\Tests\Support;
+
+use Acme\Database\Schemas\Events;
+
+/**
+ * The events Schema: `error` needs manage_options to read, `attempts` names
+ * no capability so nobody may, and `payload` is JSON.
+ */
+class GuardedEvents extends Events {
+
+	/**
+	 * Change the three columns, then build it.
+	 *
+	 * @param array<string, mixed> $args Schema arguments.
+	 */
+	public function __construct( $args = [] ) {
+		foreach ( $this->columns as $index => $column ) {
+			if ( 'error' === $column['name'] ) {
+				$this->columns[ $index ]['caps'] = [ 'select' => 'manage_options' ];
+			}
+
+			if ( 'attempts' === $column['name'] ) {
+				$this->columns[ $index ]['caps'] = [ 'select' => '' ];
+			}
+
+			if ( 'payload' === $column['name'] ) {
+				$this->columns[ $index ]['type'] = 'json';
+			}
+		}
+
+		parent::__construct( $args );
+	}
+}
