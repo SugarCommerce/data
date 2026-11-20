@@ -143,6 +143,58 @@ final class ComponentsTest extends TestCase {
 	}
 
 	/**
+	 * In the admin a table is built on admin_init only when its stored
+	 * version is behind its class's: then BerlinDB's own check, at 10,
+	 * finds it.
+	 *
+	 * @return void
+	 */
+	public function test_the_admin_builds_only_outdated_tables(): void {
+		$built = static fn( Component $component ): array => ( new \ReflectionProperty( Component::class, 'built' ) )->getValue( $component );
+		$key   = 'wpdb_acme_widgets_version';
+		$was   = get_option( $key );
+
+		set_current_screen( 'dashboard' );
+
+		// What an admin page decides; the command line, which runs this,
+		// builds everything.
+		add_filter( 'current_build_tables_now', '__return_false' );
+		add_filter( 'behind_build_tables_now', '__return_false' );
+
+		$this->assertFalse( Component::outdated( Tables\Widgets::class ), 'installed, so current' );
+
+		$current = self::fresh( 'current' )->register( 'widget', self::widget_classes() );
+
+		$this->assertSame( [], $built( $current ), 'nothing built as it is registered' );
+		$this->assertSame( 1, has_action( 'admin_init', [ $current, 'build_outdated' ] ), 'looked at first thing on admin_init' );
+
+		$current->build_outdated();
+
+		$this->assertSame( [], $built( $current ), 'current tables are not built' );
+
+		// The class is newer than what was installed.
+		update_option( $key, '1' );
+
+		$this->assertTrue( Component::outdated( Tables\Widgets::class ) );
+
+		$behind = self::fresh( 'behind' )->register( 'widget', self::widget_classes() );
+
+		$behind->build_outdated();
+
+		$this->assertArrayHasKey( 'table', $built( $behind ), 'the outdated table is built' );
+		$this->assertArrayNotHasKey( 'meta', $built( $behind ), 'its current meta table is not' );
+		$this->assertSame( 10, has_action( 'admin_init', [ $behind->table, 'maybe_upgrade' ] ), 'and BerlinDB checks it later on admin_init' );
+
+		$behind->table->maybe_upgrade();
+
+		$this->assertSame( (string) $was, (string) get_option( $key ), 'which upgrades it' );
+
+		remove_filter( 'current_build_tables_now', '__return_false' );
+		remove_filter( 'behind_build_tables_now', '__return_false' );
+		set_current_screen( 'front' );
+	}
+
+	/**
 	 * The meta type is the prefixed item name, and the meta table has its key.
 	 *
 	 * @return void

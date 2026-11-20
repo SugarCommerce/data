@@ -89,11 +89,14 @@ add_action( 'myshop_register_components', function () {
 The table names are put on `$wpdb` at once (`$wpdb->myshop_tickets`, and
 the meta table the metadata functions read). The table objects -- each
 builds its whole schema to have its CREATE TABLE ready -- are built at once
-in the admin (BerlinDB's tables hook their own upgrade on `admin_init`),
 under cron and on the command line, and everywhere else the first time
 something asks for them: a visitor's page or a REST request installs
-nothing, and is spared every schema. `{prefix}_build_tables_now` (filter)
-decides. The query and row are class names, built when used.
+nothing, and is spared every schema. In the admin a table is built on
+`admin_init` (priority 1) only when the version stored for it is behind its
+class's (`Component::outdated()` reads the option BerlinDB keeps, from the
+class's defaults), in time for BerlinDB's own upgrade check at 10; an admin
+page whose tables are current builds none. `{prefix}_build_tables_now`
+(filter) decides whether they are all built at once. The query and row are class names, built when used.
 `$components->get( 'ticket' )` returns the `Component`: `->table` (or
 `->table()`), `->meta`, `->has_meta()`, `->tables()`,
 `->class_for( 'query' )`, `->query()`. An

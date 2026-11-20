@@ -170,8 +170,9 @@ final class Components {
 
 		/**
 		 * Filters whether a component's tables are built as it is registered,
-		 * or the first time something asks for them. Built at once in the
-		 * admin, under cron and on the command line.
+		 * or the first time something asks for them. Built at once under cron
+		 * and on the command line; in the admin, only those whose stored
+		 * version is behind (Component::build_outdated()).
 		 *
 		 * @param bool   $eager Whether to build them now.
 		 * @param string $name  The component.
