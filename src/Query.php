@@ -154,10 +154,46 @@ class Query extends Base {
 	}
 
 	/**
-	 * Drop a row's cached copy and every cached list.
+	 * Drop rows' cached copies, every cached list, and every lookup by
+	 * another cached column.
 	 *
-	 * What update_item() does for itself, and a statement written here has
-	 * to do by hand: BerlinDB's own cache cleaners are private.
+	 * For a caller that changes rows with SQL of its own -- an UPDATE with
+	 * a JOIN, a set at once -- which BerlinDB never sees. Without this the
+	 * rows read as they were until the cache expires. What update_item()
+	 * does for itself, done by hand: BerlinDB's own cache cleaners are
+	 * private. The group is the query's own, prefixed as BerlinDB caches
+	 * rows in it; a lookup by another `cache_key` column is started afresh,
+	 * since the SQL may have changed that column too. While core's cache
+	 * invalidation is suspended, as during an import, nothing is dropped.
+	 *
+	 * @param array<int, int|string> $ids The rows.
+	 *
+	 * @return void
+	 * @since 1.0.0
+	 */
+	public function forget_items( array $ids ): void {
+		global $_wp_suspend_cache_invalidation;
+
+		$ids = array_values( array_filter( $ids, static fn( $id ): bool => ( is_int( $id ) || is_string( $id ) ) && '' !== $id ) );
+
+		if ( [] === $ids || ! empty( $_wp_suspend_cache_invalidation ) ) {
+			return;
+		}
+
+		wp_cache_delete_multiple( $ids, $this->cache_group );
+		wp_cache_set_last_changed( $this->cache_group );
+
+		$primary = $this->get_primary_column_name();
+
+		foreach ( $this->get_column_names( [ 'cache_key' => true ] ) as $name ) {
+			if ( $primary !== $name ) {
+				wp_cache_set_last_changed( "{$this->cache_group}-by-{$name}" );
+			}
+		}
+	}
+
+	/**
+	 * Drop a row's cached copy and every cached list.
 	 *
 	 * @param int $id The row.
 	 *
@@ -165,8 +201,7 @@ class Query extends Base {
 	 * @since 1.0.0
 	 */
 	protected function forget( int $id ): void {
-		wp_cache_delete( $id, $this->cache_group );
-		wp_cache_set_last_changed( $this->cache_group );
+		$this->forget_items( [ $id ] );
 	}
 
 	/**

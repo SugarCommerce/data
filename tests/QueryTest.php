@@ -12,6 +12,7 @@ namespace SugarCommerce\Data\Tests;
 use Acme\Database\Queries\Counter;
 use Acme\Database\Queries\Event;
 use Acme\Database\Queries\Widget;
+use SugarCommerce\Data\Tests\Support\GuardedEvent;
 
 /**
  * Insert defaults, a stable order, and the race-free writes.
@@ -280,6 +281,92 @@ final class QueryTest extends TestCase {
 
 		$this->assertSame( 2, (int) acme_get_widget( $id )->use_count );
 		$this->assertSame( 1, acme_count_widgets( [ 'use_count' => 2, 'id' => $id ] ), 'Cached lists see it too.' );
+	}
+
+	// ------------------------------------------------------------------
+	// forget_items().
+	// ------------------------------------------------------------------
+
+	/**
+	 * Rows changed by SQL of the caller's own read as they now are, singly
+	 * and in lists, once forgotten -- and as they were until then.
+	 *
+	 * @return void
+	 */
+	public function test_forgotten_rows_read_as_they_now_are(): void {
+		global $wpdb;
+
+		$ids   = [ (int) acme_add_widget( [ 'name' => 'Set A' ] ), (int) acme_add_widget( [ 'name' => 'Set B' ] ) ];
+		$other = (int) acme_add_widget( [ 'name' => 'Untouched' ] );
+
+		foreach ( [ ...$ids, $other ] as $id ) {
+			$this->assertSame( 0, (int) acme_get_widget( $id )->use_count );
+		}
+
+		$this->assertSame( 0, acme_count_widgets( [ 'use_count' => 7, 'id__in' => $ids ] ) );
+
+		$wpdb->query( $wpdb->prepare( 'UPDATE %i SET use_count = 7 WHERE id IN ( %d, %d )', $wpdb->prefix . 'acme_widgets', ...$ids ) );
+
+		$this->assertSame( 0, (int) acme_get_widget( $ids[0] )->use_count, 'Still the cached copy.' );
+
+		( new Widget() )->forget_items( $ids );
+
+		foreach ( $ids as $id ) {
+			$this->assertSame( 7, (int) acme_get_widget( $id )->use_count );
+		}
+
+		$this->assertSame( 2, acme_count_widgets( [ 'use_count' => 7, 'id__in' => $ids ] ), 'Cached lists see it too.' );
+		$this->assertNotFalse( wp_cache_get( $other, 'acme-acme_widgets' ), 'Another row stays cached.' );
+	}
+
+	/**
+	 * A row found by another cached column is looked up afresh once
+	 * forgotten, since the SQL may have changed that column.
+	 *
+	 * @return void
+	 */
+	public function test_forgetting_starts_lookups_by_other_columns_afresh(): void {
+		global $wpdb;
+
+		$id = (int) ( new Event() )->add_item( [ 'event_ref' => 'forget-old' ] );
+
+		$this->assertSame( $id, ( new GuardedEvent() )->get_item_by( 'event_ref', 'forget-old' )->id );
+
+		$wpdb->update( $wpdb->prefix . 'acme_events', [ 'event_ref' => 'forget-new' ], [ 'id' => $id ] );
+
+		( new GuardedEvent() )->forget_items( [ $id ] );
+
+		$this->assertFalse( ( new GuardedEvent() )->get_item_by( 'event_ref', 'forget-old' ) );
+		$this->assertSame( $id, ( new GuardedEvent() )->get_item_by( 'event_ref', 'forget-new' )->id );
+	}
+
+	/**
+	 * Nothing to forget, or invalidation suspended, drops nothing.
+	 *
+	 * @return void
+	 */
+	public function test_forget_items_refuses(): void {
+		$id = (int) acme_add_widget( [ 'name' => 'Kept' ] );
+
+		acme_get_widget( $id );
+
+		$last = wp_cache_get( 'last_changed', 'acme-acme_widgets' );
+
+		( new Widget() )->forget_items( [] );
+		( new Widget() )->forget_items( [ '', null, 1.5 ] );
+
+		$this->assertSame( $last, wp_cache_get( 'last_changed', 'acme-acme_widgets' ) );
+
+		wp_suspend_cache_invalidation( true );
+
+		try {
+			( new Widget() )->forget_items( [ $id ] );
+		} finally {
+			wp_suspend_cache_invalidation( false );
+		}
+
+		$this->assertNotFalse( wp_cache_get( $id, 'acme-acme_widgets' ) );
+		$this->assertSame( $last, wp_cache_get( 'last_changed', 'acme-acme_widgets' ) );
 	}
 
 	/**

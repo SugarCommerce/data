@@ -152,6 +152,19 @@ core's `wp_cache_delete_multiple()` and `wp_cache_set_last_changed()`, so the
 also fires `{prefix}_count_adjusted`, and `->ask( 'order', $id, 'get_total' )`
 reads a row through the plugin's getter and asks it one of its methods.
 
+Rows changed with SQL of your own -- an `UPDATE ... JOIN`, a set at once --
+are never seen by BerlinDB, so their cached copies read as they were until
+you forget them:
+
+```php
+$wpdb->query( "UPDATE {$orders} o JOIN ... SET o.customer_id = ..." );
+$query->forget_items( $ids ); // cached copies dropped, lists and lookups by other cached columns started afresh
+```
+
+It drops the rows from the group BerlinDB really caches them in (the query's
+cache group with its prefix), bumps that group's `last_changed` once, and
+does nothing while `wp_suspend_cache_invalidation()` is on.
+
 ## Built once
 
 BerlinDB builds a query's Schema -- every Column in it, booted and
