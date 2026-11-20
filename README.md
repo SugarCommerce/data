@@ -86,10 +86,17 @@ add_action( 'myshop_register_components', function () {
 } );
 ```
 
-The table and meta table are built at once (BerlinDB's tables hook their own
-upgrades); the query and row are class names, built when used.
-`$components->get( 'ticket' )` returns the `Component`: `->table`, `->meta`,
-`->has_meta()`, `->tables()`, `->class_for( 'query' )`, `->query()`. An
+The table names are put on `$wpdb` at once (`$wpdb->myshop_tickets`, and
+the meta table the metadata functions read). The table objects -- each
+builds its whole schema to have its CREATE TABLE ready -- are built at once
+in the admin (BerlinDB's tables hook their own upgrade on `admin_init`),
+under cron and on the command line, and everywhere else the first time
+something asks for them: a visitor's page or a REST request installs
+nothing, and is spared every schema. `{prefix}_build_tables_now` (filter)
+decides. The query and row are class names, built when used.
+`$components->get( 'ticket' )` returns the `Component`: `->table` (or
+`->table()`), `->meta`, `->has_meta()`, `->tables()`,
+`->class_for( 'query' )`, `->query()`. An
 add-on that loads after the plugin has missed the action; it checks
 `myshop_components()->is_ready()` and registers outright.
 
@@ -102,6 +109,7 @@ never hear each other.
 |---|---|
 | `{prefix}_register_components` | Register here |
 | `{prefix}_register_component_args` (filter) | Swap a class before it is built -- how an add-on decorates a row |
+| `{prefix}_build_tables_now` (filter) | Whether a component's tables are built as it registers |
 | `{prefix}_pre_register_component`, `{prefix}_register_component` | Around each registration |
 | `{prefix}_components_registered` | Once all are in |
 | `{prefix}_get_component`, `{prefix}_get_components` (filters) | On lookup |

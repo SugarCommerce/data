@@ -168,6 +168,16 @@ final class Components {
 		 */
 		do_action( $this->hook( 'pre_register_component' ), $name, $args );
 
+		/**
+		 * Filters whether a component's tables are built as it is registered,
+		 * or the first time something asks for them. Built at once in the
+		 * admin, under cron and on the command line.
+		 *
+		 * @param bool   $eager Whether to build them now.
+		 * @param string $name  The component.
+		 */
+		$args['eager'] = (bool) apply_filters( $this->hook( 'build_tables_now' ), $args['eager'] ?? Component::eager(), $name );
+
 		$component = new Component( $name, $args );
 
 		$this->components[ $name ] = $component;

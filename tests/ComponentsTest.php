@@ -87,6 +87,62 @@ final class ComponentsTest extends TestCase {
 	}
 
 	/**
+	 * A component registered where nothing installs -- a visitor's page, a
+	 * REST request -- names its tables on $wpdb at once and builds them
+	 * (and their schemas) only when asked; the metadata functions work
+	 * before then.
+	 *
+	 * @return void
+	 */
+	public function test_tables_are_built_when_asked_for(): void {
+		global $wpdb;
+
+		$components = self::fresh( 'lazy' );
+		$built      = static fn( Component $component ): array => ( new \ReflectionProperty( Component::class, 'built' ) )->getValue( $component );
+
+		// As if nothing had named them yet.
+		$names = [ $wpdb->acme_widgets, $wpdb->acme_widgetmeta, $wpdb->tables ];
+
+		unset( $wpdb->acme_widgets, $wpdb->acme_widgetmeta );
+		$wpdb->tables = array_values( array_diff( $wpdb->tables, [ 'acme_widgets', 'acme_widgetmeta' ] ) );
+
+		add_filter( 'lazy_build_tables_now', '__return_false' );
+
+		$component = $components->register( 'widget', self::widget_classes() );
+
+		remove_filter( 'lazy_build_tables_now', '__return_false' );
+
+		$this->assertSame( [], $built( $component ), 'nothing built yet' );
+		$this->assertSame( $wpdb->prefix . 'acme_widgets', $wpdb->acme_widgets );
+		$this->assertSame( $wpdb->prefix . 'acme_widgetmeta', $wpdb->acme_widgetmeta );
+		$this->assertContains( 'acme_widgetmeta', $wpdb->tables );
+
+		// Meta through WordPress's own functions, with no table object built.
+		$id = acme_add_widget( [ 'name' => 'Lazy' ] );
+
+		acme_update_widget_meta( $id, 'colour', 'green' );
+
+		$this->assertSame( 'green', acme_get_widget_meta( $id, 'colour', true ) );
+		$this->assertTrue( $component->has_meta() );
+		$this->assertArrayNotHasKey( 'meta', $built( $component ) );
+
+		// Asked for, built -- once.
+		$table = $component->table;
+
+		$this->assertTrue( $table->exists() );
+		$this->assertSame( $table, $component->table() );
+		$this->assertTrue( isset( $component->meta ) );
+		$this->assertCount( 2, $component->tables() );
+
+		// Where things install, at once.
+		$eager = self::fresh( 'eager' )->register( 'widget', self::widget_classes() );
+
+		$this->assertArrayHasKey( 'table', $built( $eager ) );
+
+		[ $wpdb->acme_widgets, $wpdb->acme_widgetmeta, $wpdb->tables ] = $names;
+	}
+
+	/**
 	 * The meta type is the prefixed item name, and the meta table has its key.
 	 *
 	 * @return void
