@@ -177,22 +177,23 @@ other plugin bundling BerlinDB. Nothing here needs it:
 }
 ```
 
-## Moving from arraypress/wp-*
+## Security
 
-From `arraypress/wp-register-components` (`ArrayPress\RegisterComponents`).
-Every class, method and hook keeps its name under `SugarCommerce\Data`.
+* SQL injection: every statement goes through `$wpdb->prepare()`, column and
+  table names as `%i`, and a column a caller names must be one of the
+  table's own before it is used.
+* Double spending under load: counts, claims, retakes and tallies are one
+  statement each, so two requests at once cannot both see "nothing yet".
+* A clean-up that runs away: `sweep()` deletes a bounded batch by id, so it
+  cannot hold a lock on a large table or take rows a condition did not name.
 
-| Old | New |
-|---|---|
-| `ArrayPress\RegisterComponents\Components` | `SugarCommerce\Data\Components` |
-| `ArrayPress\RegisterComponents\Component` | `SugarCommerce\Data\Component` |
-| `ArrayPress\RegisterComponents\Installer` | `SugarCommerce\Data\Installer` |
-| `ArrayPress\RegisterComponents\Query` | `SugarCommerce\Data\Query` |
-| `class Query extends \…\Vendor\ArrayPress\RegisterComponents\Query {}` | `class Query extends \…\Vendor\SugarCommerce\Data\Query {}` |
-| a hand-written `DELETE FROM … WHERE date_created < %s … LIMIT %d` | `$query->sweep( 'date_created', $cutoff, … )` |
-| `berlindb/core: dev-master` | unchanged: `dev-master`, tested at `a22276b` |
+## Layout
 
-New: `Query::sweep()`.
+* `src/Components.php`, `Component.php`, `Installer.php`: the registry, one
+  table's classes, and installing and repairing them.
+* `src/Query.php`: the base query class, with insert defaults and the stable
+  order; `src/Traits/Query/Writes.php` (adjust, claim, retake, tally) and
+  `Sweep.php` are its race-free writes and its clean-up.
 
 ## Requirements
 
